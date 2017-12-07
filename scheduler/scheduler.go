@@ -11,8 +11,8 @@ type Scheduler struct {
 	jc      chan Fun
 	mt      sync.Mutex
 	timeout time.Duration
-	JobPool []Fun
-	end     chan int
+	jobPool []Fun
+	end     chan bool
 }
 
 func (c *Scheduler) Start() {
@@ -22,16 +22,16 @@ func (c *Scheduler) Start() {
 			case j := <-c.jc:
 				go func() {
 					c.mt.Lock()
-					index := len(c.JobPool)
-					c.JobPool = append(c.JobPool, j)
+					index := len(c.jobPool)
+					c.jobPool = append(c.jobPool, j)
 					j()
-					c.JobPool = append(c.JobPool[:index], c.JobPool[index+1:]...)
+					c.jobPool = append(c.jobPool[:index], c.jobPool[index+1:]...)
 					c.mt.Unlock()
 				}()
 				break
 			case <-time.After(c.timeout):
-				if len(c.JobPool) <= 0 {
-					c.end <- 0
+				if len(c.jobPool) <= 0 {
+					c.end <- true
 					return
 				}
 				break
@@ -43,6 +43,7 @@ func (c *Scheduler) Start() {
 func (c *Scheduler) Add(f Fun) {
 	c.jc <- f
 }
+
 func (c *Scheduler) Wait() {
 	<-c.end
 }
@@ -50,8 +51,8 @@ func (c *Scheduler) Wait() {
 func NewScheduler() *Scheduler {
 	return &Scheduler{
 		jc:      make(chan Fun, 10),
-		JobPool: make([]Fun, 0),
+		jobPool: make([]Fun, 0),
 		timeout: time.Second * 5,
-		end:     make(chan int),
+		end:     make(chan bool),
 	}
 }

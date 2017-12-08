@@ -2,16 +2,14 @@ package scheduler
 
 import (
 	"time"
-	"sync"
+	"runtime"
 )
 
 type Fun func()
 
 type Scheduler struct {
-	jc      chan Fun
-	mt      sync.Mutex
 	timeout time.Duration
-	jobPool []Fun
+	jobPool chan Fun
 	end     chan bool
 }
 
@@ -19,16 +17,6 @@ func (c *Scheduler) Start() {
 	go func() {
 		for {
 			select {
-			case j := <-c.jc:
-				go func() {
-					c.mt.Lock()
-					index := len(c.jobPool)
-					c.jobPool = append(c.jobPool, j)
-					j()
-					c.jobPool = append(c.jobPool[:index], c.jobPool[index+1:]...)
-					c.mt.Unlock()
-				}()
-				break
 			case <-time.After(c.timeout):
 				if len(c.jobPool) <= 0 {
 					c.end <- true
@@ -41,7 +29,11 @@ func (c *Scheduler) Start() {
 }
 
 func (c *Scheduler) Add(f Fun) {
-	c.jc <- f
+	c.jobPool <- f
+	go func() {
+		f()
+		<-c.jobPool
+	}()
 }
 
 func (c *Scheduler) Wait() {
@@ -49,9 +41,9 @@ func (c *Scheduler) Wait() {
 }
 
 func NewScheduler() *Scheduler {
+	runtime.GOMAXPROCS(runtime.NumCPU())
 	return &Scheduler{
-		jc:      make(chan Fun, 10),
-		jobPool: make([]Fun, 0),
+		jobPool: make(chan Fun, 10),
 		timeout: time.Second * 5,
 		end:     make(chan bool),
 	}

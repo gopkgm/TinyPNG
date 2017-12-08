@@ -16,7 +16,15 @@ import (
 )
 
 const (
-	TPURL = "https://api.tinify.com/shrink"
+	TPURL     = "https://api.tinify.com/shrink"
+	NO_CONFIG = `error:no config file
+create config.json
+{
+    "api_key": [
+        "Get Your API key from https://tinypng.com/developers"
+    ]
+}
+`
 )
 
 var (
@@ -142,17 +150,26 @@ func PrintE(err error) {
 	}
 }
 
-func init() {
+func initConfig() error {
 	config, e := getConfig()
-	PrintE(e)
+	if e != nil {
+		fmt.Fprint(os.Stderr, NO_CONFIG)
+		return e
+	}
 	auth = config.ApiKey
+	return nil
 }
 
 func main() {
+	e := initConfig()
+	if e != nil {
+		return
+	}
 	if len(os.Args) == 3 {
 		src := os.Args[1]
 		dst := os.Args[2]
-		srcInfo, e := os.Stat(src)
+		var srcInfo os.FileInfo
+		srcInfo, e = os.Stat(src)
 		var dstInfo os.FileInfo
 		dstInfo, e = os.Stat(dst)
 		PrintE(e)

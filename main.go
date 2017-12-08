@@ -113,10 +113,10 @@ func download(url, name, path string) error {
 	}
 	var f *os.File
 	suffix := strings.HasSuffix(path, string(filepath.Separator))
-	if suffix {
-		path = path[0:len(path)-1]
+	if !suffix {
+		path = path + string(filepath.Separator)
 	}
-	f, err = os.Create(strings.Replace(name, filepath.Dir(name), path, -1))
+	f, err = os.Create(path + filepath.Base(name))
 	if err != nil {
 		return err
 	}
@@ -124,12 +124,21 @@ func download(url, name, path string) error {
 	if err != nil {
 		return err
 	}
+	fmt.Printf(printInfo(filepath.Base(name)))
 	return nil
+}
+
+func printInfo(name string) string {
+	if len(name) < 36 {
+		return name + " " + strings.Repeat("-", 36-len(name)) + " Done\n"
+	} else {
+		return name[:30] + "... --- Done\n"
+	}
 }
 
 func PrintE(err error) {
 	if err != nil {
-		fmt.Println("error", err.Error())
+		fmt.Fprint(os.Stderr, "error:"+err.Error()+"\n")
 	}
 }
 
@@ -148,6 +157,7 @@ func main() {
 		dstInfo, e = os.Stat(dst)
 		PrintE(e)
 		if dstInfo.IsDir() {
+			fmt.Println("---Start---\n")
 			if srcInfo.IsDir() {
 				s := scheduler.NewScheduler()
 				s.Start()
@@ -163,6 +173,7 @@ func main() {
 			} else {
 				compress(src, dst)
 			}
+			fmt.Print("\n----End----")
 			os.Exit(0)
 		}
 		os.Exit(1)

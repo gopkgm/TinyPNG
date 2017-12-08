@@ -11,6 +11,8 @@ import (
 	"os"
 	"io"
 	"TinyPNG/scheduler"
+	"strings"
+	"path/filepath"
 )
 
 const (
@@ -18,11 +20,12 @@ const (
 )
 
 var (
-	auto string
+	auth      []string
+	authIndex = 0
 )
 
 type Config struct {
-	ApiKey string `json:"api_key"`
+	ApiKey []string `json:"api_key"`
 }
 
 type ImgResp struct {
@@ -53,6 +56,9 @@ func getConfig() (*Config, error) {
 }
 
 func compress(file, path string) error {
+	if len(auth) <= 0 {
+		return errors.New("no api_key")
+	}
 	client := &http.Client{}
 	f, err := os.Open(file)
 	fName := f.Name()
@@ -69,7 +75,7 @@ func compress(file, path string) error {
 	if err != nil {
 		return err
 	}
-	req.Header.Add("Authorization", "Basic "+base64.StdEncoding.EncodeToString([]byte("api:"+auto)))
+	req.Header.Add("Authorization", "Basic "+base64.StdEncoding.EncodeToString([]byte("api:"+auth[authIndex])))
 	resp, err := client.Do(req)
 	if resp != nil {
 		defer resp.Body.Close()
@@ -80,7 +86,18 @@ func compress(file, path string) error {
 		}
 		imgResp := &ImgResp{}
 		json.Unmarshal(bytes, imgResp)
-		//fmt.Printf("%+v", imgResp)
+		//fmt.Printf("%+v\n", imgResp)
+		if len(imgResp.Error) > 0 {
+			if strings.Contains(strings.ToLower(imgResp.Error), "unauthorized") {
+				authIndex++
+				if len(auth) > authIndex {
+					compress(file, path)
+				} else {
+					return errors.New("api_key invalid")
+				}
+			}
+			return errors.New(imgResp.Error)
+		}
 		err = download(imgResp.Output.Url, fName, path)
 		if err != nil {
 			return err
@@ -95,7 +112,11 @@ func download(url, name, path string) error {
 		return err
 	}
 	var f *os.File
-	f, err = os.Create(path + name)
+	suffix := strings.HasSuffix(path, string(filepath.Separator))
+	if suffix {
+		path = path[0:len(path)-1]
+	}
+	f, err = os.Create(strings.Replace(name, filepath.Dir(name), path, -1))
 	if err != nil {
 		return err
 	}
@@ -108,28 +129,43 @@ func download(url, name, path string) error {
 
 func PrintE(err error) {
 	if err != nil {
-		fmt.Println(err.Error())
+		fmt.Println("error", err.Error())
 	}
 }
 
 func init() {
 	config, e := getConfig()
 	PrintE(e)
-	auto = config.ApiKey
+	auth = config.ApiKey
 }
 
 func main() {
-	//src := ""
-	//dst := ""
-
-	s := scheduler.NewScheduler()
-	s.Start()
-	for i := 0; i < 5; i++ {
-		func(i int) {
-			s.Add(func() {
-				println("aaaaaaaaaaaaaaaa", i)
-			})
-		}(i)
+	if len(os.Args) == 3 {
+		src := os.Args[1]
+		dst := os.Args[2]
+		srcInfo, e := os.Stat(src)
+		var dstInfo os.FileInfo
+		dstInfo, e = os.Stat(dst)
+		PrintE(e)
+		if dstInfo.IsDir() {
+			if srcInfo.IsDir() {
+				s := scheduler.NewScheduler()
+				s.Start()
+				filepath.Walk(src, func(path string, info os.FileInfo, err error) error {
+					if ".png" == filepath.Ext(info.Name()) || ".jpg" == filepath.Ext(info.Name()) {
+						s.Add(func() {
+							compress(path, dst)
+						})
+					}
+					return nil
+				})
+				s.Wait()
+			} else {
+				compress(src, dst)
+			}
+			os.Exit(0)
+		}
+		os.Exit(1)
 	}
-	s.Wait()
+	os.Exit(2)
 }
